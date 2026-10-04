@@ -1,0 +1,30 @@
+name: hermes-adaptive-effort
+repo: https://github.com/atostivint/hermes-adaptive-effort
+sha: 0e5353f41e5cfd7c6ac494b80a981a5d7bfcb2f0
+subdir: hermes-adaptive-effort
+description: >-
+  Adaptive per-turn reasoning effort for Hermes: an opt-in scorer (Jev, OpenRouter, or Cloudflare Clef) chooses a level; prompt text is sent only after provider-specific consent, and scoring failures leave requests unchanged.
+maintainer: atostivint
+tier: community
+category: general
+title: Hermes Adaptive Effort
+version: "0.1.0"
+readme: true
+platforms: []
+known_issues:
+  - Some provider routes have no writable effort field, so requests remain unchanged.
+  - Ox Alpha may reject the medium effort value with HTTP 400.
+capabilities:
+  provides_tools: []
+  provides_hooks:
+    - on_session_end
+    - on_session_finalize
+    - on_session_reset
+    - subagent_start
+    - subagent_stop
+  provides_middleware:
+    - llm_request
+  requires_env:
+    - TYPESAFE_API_KEY
+    - OPENROUTER_API_KEY
+    - CLOUDFLARE_AUTH_TOKEN
