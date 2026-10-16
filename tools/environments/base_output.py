@@ -395,14 +395,37 @@ def _drain_stdout(proc: ProcessHandle, output: _BoundedOutputCollector, stop: "t
 
 
 def _drain_fd_select(proc, fd: int, output: _BoundedOutputCollector, decoder, stop=None) -> None:
-    """POSIX drain: select() poll, stopping ~300ms after bash exits with the pipe idle, or
-    when *stop* is set (the pipe is being handed to another reader — yield-to-background)."""
+    """POSIX drain: wait for data on the pipe, stopping ~300ms after bash exits with the
+    pipe idle, or when *stop* is set (the pipe is being handed to another reader —
+    yield-to-background).
+
+    ``poll()`` is preferred over ``select()`` because ``select()`` refuses any descriptor
+    number >= ``FD_SETSIZE`` (1024 on Linux) with ``ValueError: filedescriptor out of range
+    in select()``. The drain's ``except (ValueError, OSError)`` then returns without reading
+    a single byte: the command still ran, its exit code is still correct, but *every* line
+    of its output is lost. A long-lived Hermes process whose fd table has grown past 1024 —
+    any leaked descriptor in a plugin or client library allocates above the ceiling, and the
+    stdout pipe handed to this drain inherits that range — therefore answers the terminal
+    tool with empty output for every command, which reads as "the command produced nothing"
+    rather than as a bug. ``poll()`` has no descriptor-number ceiling, so it is used
+    whenever the platform provides it; ``select()`` stays as the fallback for platforms that
+    lack ``poll`` (Windows has neither and takes :func:`_drain_fd_windows`)."""
+    poller = None
+    if hasattr(select, "poll"):
+        try:
+            poller = select.poll()
+            poller.register(fd, select.POLLIN | select.POLLHUP | select.POLLERR)
+        except (ValueError, OSError):
+            poller = None  # descriptor this poll() cannot take: fall back to select()
     idle_after_exit = 0
     while True:
         if stop is not None and stop.is_set():
             return
         try:
-            ready, _, _ = select.select([fd], [], [], 0.1)
+            if poller is not None:
+                ready = poller.poll(100)  # ms; no FD_SETSIZE limit
+            else:
+                ready = select.select([fd], [], [], 0.1)[0]
         except (ValueError, OSError):
             return  # fd already closed
         if ready:
